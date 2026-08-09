@@ -53,9 +53,9 @@ local posicionAnclada = nil
 local ventajaAutofarmPremium = false
 local attackTimePremium = 0.35 
 local animacionesBloqueadas = {
-	["rbxassetid://3638729053"] = true, -- Guardia (idle)
-	["rbxassetid://3638749874"] = true, -- Golpe Derecho
-	["rbxassetid://3638767427"] = true, -- Golpe Izquierdo
+	["rbxassetid://3638729053"] = true,
+	["rbxassetid://3638749874"] = true,
+	["rbxassetid://3638767427"] = true,
 }
 
 local ventajaBloqueadorAnimacionesActiva = false
@@ -71,6 +71,22 @@ local eventoGolpe = ReplicatedStorage:FindFirstChild("guiDamageEvent")
 if not eventoGolpe then
 	task.spawn(function()
 		eventoGolpe = ReplicatedStorage:WaitForChild("guiDamageEvent")
+	end)
+end
+
+local function ruletaAutomatica()
+	task.spawn(function()
+		local tiempoInicio = tick()
+		while tick() - tiempoInicio < 18 do
+			local args = {
+				"openFortuneWheel",
+				game:GetService("ReplicatedStorage"):WaitForChild("fortuneWheelChances"):WaitForChild("Fortune Wheel")
+			}
+			pcall(function()
+				game:GetService("ReplicatedStorage"):WaitForChild("rEvents"):WaitForChild("openFortuneWheelRemote"):InvokeServer(unpack(args))
+			end)
+			task.wait(1)
+		end
 	end)
 end
 
@@ -172,6 +188,37 @@ ScrollContainer.CanvasSize = UDim2.new(0, 0, 0, 0)
 local UIListLayout = Instance.new("UIListLayout", ScrollContainer)
 UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
 UIListLayout.Padding = UDim.new(0.04, 0)
+
+local RuletaFrame = Instance.new("Frame", ScrollContainer)
+RuletaFrame.Size = UDim2.new(1, 0, 0.22, 0)
+RuletaFrame.BackgroundTransparency = 1
+RuletaFrame.LayoutOrder = -1
+
+local RuletaLabel = Instance.new("TextLabel", RuletaFrame)
+RuletaLabel.Size = UDim2.new(0.55, 0, 0.8, 0)
+RuletaLabel.Position = UDim2.new(0, 0, 0.1, 0)
+RuletaLabel.BackgroundTransparency = 1
+RuletaLabel.Text = "Ruleta Automática"
+RuletaLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+RuletaLabel.Font = Enum.Font.SourceSansBold
+RuletaLabel.TextScaled = true
+RuletaLabel.TextXAlignment = Enum.TextXAlignment.Left
+
+local RuletaButton = Instance.new("TextButton", RuletaFrame)
+RuletaButton.Size = UDim2.new(0.34, 0, 0.8, 0)
+RuletaButton.Position = UDim2.new(0.64, 0, 0.1, 0)
+RuletaButton.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+RuletaButton.Text = "INICIAR"
+RuletaButton.TextColor3 = Color3.fromRGB(200, 200, 200)
+RuletaButton.Font = Enum.Font.SourceSansBold
+RuletaButton.TextScaled = true
+local RuletaCorner = Instance.new("UICorner", RuletaButton)
+local RuletaStroke = Instance.new("UIStroke", RuletaButton)
+RuletaStroke.Color = Color3.fromRGB(80, 80, 80)
+
+RuletaButton.MouseButton1Click:Connect(function()
+	ruletaAutomatica()
+end)
 
 local FeatureFrame = Instance.new("Frame", ScrollContainer)
 FeatureFrame.Size = UDim2.new(1, 0, 0.22, 0)
@@ -463,7 +510,6 @@ local AnimBlockerToggleCorner = Instance.new("UICorner", AnimBlockerToggleButton
 local AnimBlockerToggleStroke = Instance.new("UIStroke", AnimBlockerToggleButton)
 AnimBlockerToggleStroke.Color = Color3.fromRGB(80, 80, 80)
 
-
 local character = player.Character or player.CharacterAdded:Wait()
 local humanoid = character:WaitForChild("Humanoid")
 local conexionAnimacion = nil
@@ -524,7 +570,6 @@ end
 
 player.CharacterAdded:Connect(actualizarPersonaje)
 if character then actualizarPersonaje(character) end
-
 
 MenuButton.MouseButton1Click:Connect(function() MainPanel.Visible = not MainPanel.Visible end)
 CloseButton.MouseButton1Click:Connect(function() MainPanel.Visible = false end)
@@ -878,7 +923,6 @@ AnimBlockerToggleButton.MouseButton1Click:Connect(function()
 		AnimBlockerToggleStroke.Color = Color3.fromRGB(80, 80, 80)
 	end
 end)
-
 
 RunService.Heartbeat:Connect(function()
 	if ventajaAnclajeActiva and posicionAnclada then
