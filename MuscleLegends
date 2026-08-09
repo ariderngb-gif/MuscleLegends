@@ -1,0 +1,1081 @@
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage") 
+
+local player = Players.LocalPlayer
+local playerGui = player:WaitForChild("PlayerGui")
+
+local PlayerModule = require(player.PlayerScripts:WaitForChild("PlayerModule"))
+local Controls = PlayerModule:GetControls()
+
+local herramientasConfig = {
+	["Punch"] = { cooldown = 0.35 / 2 },
+	["Weight"] = { cooldown = 1 / 2 },
+	["Ground Slam"] = { cooldown = 6 / 2 },
+	["Handstands"] = { cooldown = 1 / 2 },
+	["Pushups"] = { cooldown = 1 / 2 },
+	["Situps"] = { cooldown = 1 / 2 },
+	["Stomp"] = { cooldown = 7 / 2 }
+}
+
+local ventajaMovilidadActiva = false
+local ventajaAutoEjercicioActiva = false
+local velocidadConfigurada = 16 
+local saltoMaximoDetectado = 50
+
+local listaRocas = {"Rock Of Legends", "Muscle King Mountain", "Ancient Jungle Rock"}
+local indiceRoca = 1
+local ventajaRocaActiva = false
+local bucleRoca = nil
+local ejercicioSeleccionado = nil 
+
+local rocaObjetoActual = nil
+local posicionOriginal = nil
+local tamanoOriginal = nil
+local colisionOriginal = nil
+local transparenciaOriginal = nil
+
+local changeSpeedSizeRemote = ReplicatedStorage:WaitForChild("rEvents", 5):WaitForChild("changeSpeedSizeRemote", 5)
+local ventajaTamanoActiva = false
+local tamanoConfigurado = 2
+local bucleTamano = nil
+
+local ventajaPunosActiva = false
+local rebirthRemote = ReplicatedStorage:WaitForChild("rEvents", 5):WaitForChild("rebirthRemote", 5)
+local estadoAutoRebirth = false
+local ejecutandoLlamada = false
+local limiteRebirthsConfigurado = 0 
+
+local ventajaAnclajeActiva = false
+local posicionAnclada = nil
+local ventajaAutofarmPremium = false
+local attackTimePremium = 0.35 
+local animacionesBloqueadas = {
+	["rbxassetid://3638729053"] = true, -- Guardia (idle)
+	["rbxassetid://3638749874"] = true, -- Golpe Derecho
+	["rbxassetid://3638767427"] = true, -- Golpe Izquierdo
+}
+
+local ventajaBloqueadorAnimacionesActiva = false
+local listaAnimacionesBloqueadasSistema = {
+	["3643199801"] = true, ["3642876150"] = true, ["3642861557"] = true,
+	["3509852762"] = true, ["3509859267"] = true, ["3642838380"] = true,
+	["3642826142"] = true, ["3643227449"] = true, ["507766666"]  = true,
+	["3638347135"] = true, ["507768375"]  = true, ["3638331185"] = true,
+	["3638767427"] = true, ["3638749874"] = true, ["3638729053"] = true
+}
+
+local eventoGolpe = ReplicatedStorage:FindFirstChild("guiDamageEvent")
+if not eventoGolpe then
+	task.spawn(function()
+		eventoGolpe = ReplicatedStorage:WaitForChild("guiDamageEvent")
+	end)
+end
+
+player.CharacterAdded:Connect(function(char)
+	local hum = char:WaitForChild("Humanoid")
+	hum:GetPropertyChangedSignal("JumpPower"):Connect(function()
+		if hum.JumpPower > 1 and not ventajaMovilidadActiva then
+			saltoMaximoDetectado = hum.JumpPower
+		end
+	end)
+end)
+
+if player.Character then
+	local hum = player.Character:FindFirstChild("Humanoid")
+	if hum then
+		hum:GetPropertyChangedSignal("JumpPower"):Connect(function()
+			if hum.JumpPower > 1 and not ventajaMovilidadActiva then
+				saltoMaximoDetectado = hum.JumpPower
+			end
+		end)
+	end
+end
+
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "ARIDER_GUI"
+screenGui.ResetOnSpawn = false
+screenGui.Parent = playerGui
+
+local function hacerArrastrable(guiObjeto)
+	local dragging, dragStart, startPos
+	guiObjeto.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			dragging = true
+			dragStart = input.Position
+			startPos = guiObjeto.Position
+		end
+	end)
+	UserInputService.InputChanged:Connect(function(input)
+		if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+			local delta = input.Position - dragStart
+			guiObjeto.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+		end
+	end)
+	UserInputService.InputEnded:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			dragging = false
+		end
+	end)
+end
+
+local MenuButton = Instance.new("TextButton")
+MenuButton.Name = "MenuButton"
+MenuButton.Size = UDim2.new(0.12, 0, 0.12, 0) 
+MenuButton.Position = UDim2.new(0.5, -50, 0.5, -50)
+MenuButton.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+MenuButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+MenuButton.Text = "ARIDER"
+MenuButton.Font = Enum.Font.SourceSansBold
+MenuButton.TextScaled = true
+MenuButton.Parent = screenGui
+
+local ButtonCorner = Instance.new("UICorner", MenuButton)
+ButtonCorner.CornerRadius = UDim.new(0.2, 0)
+local ButtonAspect = Instance.new("UIAspectRatioConstraint", MenuButton)
+hacerArrastrable(MenuButton)
+
+local MainPanel = Instance.new("Frame")
+MainPanel.Name = "MainPanel"
+MainPanel.Size = UDim2.new(0.4, 0, 0.5, 0)
+MainPanel.Position = UDim2.new(0.3, 0, 0.25, 0)
+MainPanel.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+MainPanel.Visible = false
+MainPanel.Parent = screenGui
+
+local PanelCorner = Instance.new("UICorner", MainPanel)
+local PanelStroke = Instance.new("UIStroke", MainPanel)
+PanelStroke.Color = Color3.fromRGB(100, 100, 100)
+PanelStroke.Thickness = 3
+hacerArrastrable(MainPanel)
+
+local CloseButton = Instance.new("TextButton", MainPanel)
+CloseButton.Size = UDim2.new(0.1, 0, 0.1, 0)
+CloseButton.Position = UDim2.new(0.9, 0, 0, 0)
+CloseButton.Text = "X"
+CloseButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+CloseButton.BackgroundTransparency = 1
+CloseButton.Font = Enum.Font.SourceSansBold
+CloseButton.TextScaled = true
+
+local ScrollContainer = Instance.new("ScrollingFrame", MainPanel)
+ScrollContainer.Size = UDim2.new(0.9, 0, 0.8, 0)
+ScrollContainer.Position = UDim2.new(0.05, 0, 0.15, 0)
+ScrollContainer.BackgroundTransparency = 1
+ScrollContainer.ScrollBarThickness = 4
+ScrollContainer.ScrollingDirection = Enum.ScrollingDirection.Y
+ScrollContainer.AutomaticCanvasSize = Enum.AutomaticSize.Y
+ScrollContainer.CanvasSize = UDim2.new(0, 0, 0, 0)
+
+local UIListLayout = Instance.new("UIListLayout", ScrollContainer)
+UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+UIListLayout.Padding = UDim.new(0.04, 0)
+
+local FeatureFrame = Instance.new("Frame", ScrollContainer)
+FeatureFrame.Size = UDim2.new(1, 0, 0.22, 0)
+FeatureFrame.BackgroundTransparency = 1
+
+local FeatureLabel = Instance.new("TextLabel", FeatureFrame)
+FeatureLabel.Size = UDim2.new(0.55, 0, 0.45, 0)
+FeatureLabel.BackgroundTransparency = 1
+FeatureLabel.Text = "Movilidad Ejercicios"
+FeatureLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+FeatureLabel.Font = Enum.Font.SourceSansBold
+FeatureLabel.TextScaled = true
+FeatureLabel.TextXAlignment = Enum.TextXAlignment.Left
+
+local SpeedInput = Instance.new("TextBox", FeatureFrame)
+SpeedInput.Size = UDim2.new(0.35, 0, 0.4, 0)
+SpeedInput.Position = UDim2.new(0, 0, 0.5, 0)
+SpeedInput.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+SpeedInput.Text = "16"
+SpeedInput.TextColor3 = Color3.fromRGB(255, 255, 255)
+SpeedInput.Font = Enum.Font.SourceSans
+SpeedInput.TextScaled = true
+local InputCorner = Instance.new("UICorner", SpeedInput)
+
+local ToggleButton = Instance.new("TextButton", FeatureFrame)
+ToggleButton.Size = UDim2.new(0.34, 0, 0.8, 0)
+ToggleButton.Position = UDim2.new(0.64, 0, 0.1, 0)
+ToggleButton.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+ToggleButton.Text = "DESACTIVADO"
+ToggleButton.TextColor3 = Color3.fromRGB(150, 150, 150)
+ToggleButton.Font = Enum.Font.SourceSansBold
+ToggleButton.TextScaled = true
+local ToggleCorner = Instance.new("UICorner", ToggleButton)
+local ToggleStroke = Instance.new("UIStroke", ToggleButton)
+ToggleStroke.Color = Color3.fromRGB(80, 80, 80)
+
+local AutoFrame = Instance.new("Frame", ScrollContainer)
+AutoFrame.Size = UDim2.new(1, 0, 0.22, 0)
+AutoFrame.BackgroundTransparency = 1
+
+local AutoLabel = Instance.new("TextLabel", AutoFrame)
+AutoLabel.Size = UDim2.new(0.55, 0, 0.8, 0)
+AutoLabel.Position = UDim2.new(0, 0, 0.1, 0)
+AutoLabel.BackgroundTransparency = 1
+AutoLabel.Text = "Auto Ejercicio"
+AutoLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+AutoLabel.Font = Enum.Font.SourceSansBold
+AutoLabel.TextScaled = true
+AutoLabel.TextXAlignment = Enum.TextXAlignment.Left
+
+local AutoToggleButton = Instance.new("TextButton", AutoFrame)
+AutoToggleButton.Size = UDim2.new(0.34, 0, 0.8, 0)
+AutoToggleButton.Position = UDim2.new(0.64, 0, 0.1, 0)
+AutoToggleButton.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+AutoToggleButton.Text = "DESACTIVADO"
+AutoToggleButton.TextColor3 = Color3.fromRGB(150, 150, 150)
+AutoToggleButton.Font = Enum.Font.SourceSansBold
+AutoToggleButton.TextScaled = true
+local AutoToggleCorner = Instance.new("UICorner", AutoToggleButton)
+local AutoToggleStroke = Instance.new("UIStroke", AutoToggleButton)
+AutoToggleStroke.Color = Color3.fromRGB(80, 80, 80)
+
+local RocaFrame = Instance.new("Frame", ScrollContainer)
+RocaFrame.Size = UDim2.new(1, 0, 0.22, 0)
+RocaFrame.BackgroundTransparency = 1
+
+local RocaSelectorButton = Instance.new("TextButton", RocaFrame)
+RocaSelectorButton.Size = UDim2.new(0.55, 0, 0.8, 0)
+RocaSelectorButton.Position = UDim2.new(0, 0, 0.1, 0)
+RocaSelectorButton.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+RocaSelectorButton.Text = "Roca: Legends"
+RocaSelectorButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+RocaSelectorButton.Font = Enum.Font.SourceSansBold
+RocaSelectorButton.TextScaled = true
+local RocaSelectorCorner = Instance.new("UICorner", RocaSelectorButton)
+
+local RocaToggleButton = Instance.new("TextButton", RocaFrame)
+RocaToggleButton.Size = UDim2.new(0.34, 0, 0.8, 0)
+RocaToggleButton.Position = UDim2.new(0.64, 0, 0.1, 0)
+RocaToggleButton.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+RocaToggleButton.Text = "DESACTIVADO"
+RocaToggleButton.TextColor3 = Color3.fromRGB(150, 150, 150)
+RocaToggleButton.Font = Enum.Font.SourceSansBold
+RocaToggleButton.TextScaled = true
+local RocaToggleCorner = Instance.new("UICorner", RocaToggleButton)
+local RocaToggleStroke = Instance.new("UIStroke", RocaToggleButton)
+RocaToggleStroke.Color = Color3.fromRGB(80, 80, 80)
+
+local EquipFrame = Instance.new("Frame", ScrollContainer)
+EquipFrame.Size = UDim2.new(1, 0, 0.22, 0)
+EquipFrame.BackgroundTransparency = 1
+
+local EjercicioLabel = Instance.new("TextLabel", EquipFrame)
+EjercicioLabel.Size = UDim2.new(0.55, 0, 0.8, 0)
+EjercicioLabel.BackgroundTransparency = 1
+EjercicioLabel.Text = "Seleccionar Ejercicio"
+EjercicioLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+EjercicioLabel.Font = Enum.Font.SourceSansBold
+EjercicioLabel.TextScaled = true
+
+local EquipBtn = Instance.new("TextButton", EquipFrame)
+EquipBtn.Size = UDim2.new(0.34, 0, 0.8, 0)
+EquipBtn.Position = UDim2.new(0.64, 0, 0.1, 0)
+EquipBtn.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+EquipBtn.Text = "Ninguno"
+EquipBtn.TextColor3 = Color3.fromRGB(200, 200, 200)
+EquipBtn.Font = Enum.Font.SourceSansBold
+EquipBtn.TextScaled = true
+Instance.new("UICorner", EquipBtn)
+local EquipStroke = Instance.new("UIStroke", EquipBtn)
+EquipStroke.Color = Color3.fromRGB(80, 80, 80)
+
+local PunosFrame = Instance.new("Frame", ScrollContainer)
+PunosFrame.Size = UDim2.new(1, 0, 0.22, 0)
+PunosFrame.BackgroundTransparency = 1
+
+local PunosLabel = Instance.new("TextLabel", PunosFrame)
+PunosLabel.Size = UDim2.new(0.55, 0, 0.8, 0)
+PunosLabel.Position = UDim2.new(0, 0, 0.1, 0)
+PunosLabel.BackgroundTransparency = 1
+PunosLabel.Text = "Equipar Puños Siempre"
+PunosLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+PunosLabel.Font = Enum.Font.SourceSansBold
+PunosLabel.TextScaled = true
+PunosLabel.TextXAlignment = Enum.TextXAlignment.Left
+
+local PunosToggleButton = Instance.new("TextButton", PunosFrame)
+PunosToggleButton.Size = UDim2.new(0.34, 0, 0.8, 0)
+PunosToggleButton.Position = UDim2.new(0.64, 0, 0.1, 0)
+PunosToggleButton.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+PunosToggleButton.Text = "DESACTIVADO"
+PunosToggleButton.TextColor3 = Color3.fromRGB(150, 150, 150)
+PunosToggleButton.Font = Enum.Font.SourceSansBold
+PunosToggleButton.TextScaled = true
+local PunosToggleCorner = Instance.new("UICorner", PunosToggleButton)
+local PunosToggleStroke = Instance.new("UIStroke", PunosToggleButton)
+PunosToggleStroke.Color = Color3.fromRGB(80, 80, 80)
+
+local RebirthFrame = Instance.new("Frame", ScrollContainer)
+RebirthFrame.Size = UDim2.new(1, 0, 0.22, 0)
+RebirthFrame.BackgroundTransparency = 1
+
+local RebirthLabel = Instance.new("TextLabel", RebirthFrame)
+RebirthLabel.Size = UDim2.new(0.55, 0, 0.45, 0)
+RebirthLabel.Position = UDim2.new(0, 0, 0, 0)
+RebirthLabel.BackgroundTransparency = 1
+RebirthLabel.Text = "Auto Renacimiento"
+RebirthLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+RebirthLabel.Font = Enum.Font.SourceSansBold
+RebirthLabel.TextScaled = true
+RebirthLabel.TextXAlignment = Enum.TextXAlignment.Left
+
+local RebirthLimitInput = Instance.new("TextBox", RebirthFrame)
+RebirthLimitInput.Size = UDim2.new(0.35, 0, 0.4, 0)
+RebirthLimitInput.Position = UDim2.new(0, 0, 0.5, 0)
+RebirthLimitInput.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+RebirthLimitInput.Text = "0"
+RebirthLimitInput.PlaceholderText = "Meta Rebirth"
+RebirthLimitInput.TextColor3 = Color3.fromRGB(255, 255, 255)
+RebirthLimitInput.Font = Enum.Font.SourceSans
+RebirthLimitInput.TextScaled = true
+local LimitCorner = Instance.new("UICorner", RebirthLimitInput)
+
+local RebirthToggleButton = Instance.new("TextButton", RebirthFrame)
+RebirthToggleButton.Size = UDim2.new(0.34, 0, 0.8, 0)
+RebirthToggleButton.Position = UDim2.new(0.64, 0, 0.1, 0)
+RebirthToggleButton.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+RebirthToggleButton.Text = "DESACTIVADO"
+RebirthToggleButton.TextColor3 = Color3.fromRGB(150, 150, 150)
+RebirthToggleButton.Font = Enum.Font.SourceSansBold
+RebirthToggleButton.TextScaled = true
+
+local RebirthToggleCorner = Instance.new("UICorner", RebirthToggleButton)
+local RebirthToggleStroke = Instance.new("UIStroke", RebirthToggleButton)
+RebirthToggleStroke.Color = Color3.fromRGB(80, 80, 80)
+
+local TamanoFrame = Instance.new("Frame", ScrollContainer)
+TamanoFrame.Size = UDim2.new(1, 0, 0.22, 0)
+TamanoFrame.BackgroundTransparency = 1
+
+local TamanoLabel = Instance.new("TextLabel", TamanoFrame)
+TamanoLabel.Size = UDim2.new(0.55, 0, 0.45, 0)
+TamanoLabel.Position = UDim2.new(0, 0, 0, 0)
+TamanoLabel.BackgroundTransparency = 1
+TamanoLabel.Text = "Forzar Tamaño Fijo"
+TamanoLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+TamanoLabel.Font = Enum.Font.SourceSansBold
+TamanoLabel.TextScaled = true
+TamanoLabel.TextXAlignment = Enum.TextXAlignment.Left
+
+local TamanoInput = Instance.new("TextBox", TamanoFrame)
+TamanoInput.Size = UDim2.new(0.35, 0, 0.4, 0)
+TamanoInput.Position = UDim2.new(0, 0, 0.5, 0)
+TamanoInput.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+TamanoInput.Text = "2"
+TamanoInput.PlaceholderText = "Ej: 2 o inf"
+TamanoInput.TextColor3 = Color3.fromRGB(255, 255, 255)
+TamanoInput.Font = Enum.Font.SourceSans
+TamanoInput.TextScaled = true
+local TamanoInputCorner = Instance.new("UICorner", TamanoInput)
+
+local TamanoToggleButton = Instance.new("TextButton", TamanoFrame)
+TamanoToggleButton.Size = UDim2.new(0.34, 0, 0.8, 0)
+TamanoToggleButton.Position = UDim2.new(0.64, 0, 0.1, 0)
+TamanoToggleButton.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+TamanoToggleButton.Text = "DESACTIVADO"
+TamanoToggleButton.TextColor3 = Color3.fromRGB(150, 150, 150)
+TamanoToggleButton.Font = Enum.Font.SourceSansBold
+TamanoToggleButton.TextScaled = true
+local TamanoToggleCorner = Instance.new("UICorner", TamanoToggleButton)
+local TamanoToggleStroke = Instance.new("UIStroke", TamanoToggleButton)
+TamanoToggleStroke.Color = Color3.fromRGB(80, 80, 80)
+
+local AnclajeFrame = Instance.new("Frame", ScrollContainer)
+AnclajeFrame.Size = UDim2.new(1, 0, 0.22, 0)
+AnclajeFrame.BackgroundTransparency = 1
+
+local AnclajeLabel = Instance.new("TextLabel", AnclajeFrame)
+AnclajeLabel.Size = UDim2.new(0.55, 0, 0.8, 0)
+AnclajeLabel.Position = UDim2.new(0, 0, 0.1, 0)
+AnclajeLabel.BackgroundTransparency = 1
+AnclajeLabel.Text = "Anclar Posición"
+AnclajeLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+AnclajeLabel.Font = Enum.Font.SourceSansBold
+AnclajeLabel.TextScaled = true
+AnclajeLabel.TextXAlignment = Enum.TextXAlignment.Left
+
+local AnclajeToggleButton = Instance.new("TextButton", AnclajeFrame)
+AnclajeToggleButton.Size = UDim2.new(0.34, 0, 0.8, 0)
+AnclajeToggleButton.Position = UDim2.new(0.64, 0, 0.1, 0)
+AnclajeToggleButton.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+AnclajeToggleButton.Text = "DESACTIVADO"
+AnclajeToggleButton.TextColor3 = Color3.fromRGB(150, 150, 150)
+AnclajeToggleButton.Font = Enum.Font.SourceSansBold
+AnclajeToggleButton.TextScaled = true
+local AnclajeToggleCorner = Instance.new("UICorner", AnclajeToggleButton)
+local AnclajeToggleStroke = Instance.new("UIStroke", AnclajeToggleButton)
+AnclajeToggleStroke.Color = Color3.fromRGB(80, 80, 80)
+
+local PremiumFrame = Instance.new("Frame", ScrollContainer)
+PremiumFrame.Size = UDim2.new(1, 0, 0.22, 0)
+PremiumFrame.BackgroundTransparency = 1
+
+local PremiumLabel = Instance.new("TextLabel", PremiumFrame)
+PremiumLabel.Size = UDim2.new(0.55, 0, 0.8, 0)
+PremiumLabel.Position = UDim2.new(0, 0, 0.1, 0)
+PremiumLabel.BackgroundTransparency = 1
+PremiumLabel.Text = "Puños Sin Animación"
+PremiumLabel.TextColor3 = Color3.fromRGB(255, 255, 255) 
+PremiumLabel.Font = Enum.Font.SourceSansBold
+PremiumLabel.TextScaled = true
+PremiumLabel.TextXAlignment = Enum.TextXAlignment.Left
+
+local PremiumToggleButton = Instance.new("TextButton", PremiumFrame)
+PremiumToggleButton.Size = UDim2.new(0.34, 0, 0.8, 0)
+PremiumToggleButton.Position = UDim2.new(0.64, 0, 0.1, 0)
+PremiumToggleButton.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+PremiumToggleButton.Text = "DESACTIVADO"
+PremiumToggleButton.TextColor3 = Color3.fromRGB(150, 150, 150)
+PremiumToggleButton.Font = Enum.Font.SourceSansBold
+PremiumToggleButton.TextScaled = true
+local PremiumToggleCorner = Instance.new("UICorner", PremiumToggleButton)
+local PremiumToggleStroke = Instance.new("UIStroke", PremiumToggleButton)
+PremiumToggleStroke.Color = Color3.fromRGB(80, 80, 80)
+
+local AnimBlockerFrame = Instance.new("Frame", ScrollContainer)
+AnimBlockerFrame.Size = UDim2.new(1, 0, 0.22, 0)
+AnimBlockerFrame.BackgroundTransparency = 1
+
+local AnimBlockerLabel = Instance.new("TextLabel", AnimBlockerFrame)
+AnimBlockerLabel.Size = UDim2.new(0.55, 0, 0.8, 0)
+AnimBlockerLabel.Position = UDim2.new(0, 0, 0.1, 0)
+AnimBlockerLabel.BackgroundTransparency = 1
+AnimBlockerLabel.Text = "Bloqueador De Animaciones" 
+AnimBlockerLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+AnimBlockerLabel.Font = Enum.Font.SourceSansBold
+AnimBlockerLabel.TextScaled = true
+AnimBlockerLabel.TextXAlignment = Enum.TextXAlignment.Left
+
+local AnimBlockerToggleButton = Instance.new("TextButton", AnimBlockerFrame)
+AnimBlockerToggleButton.Size = UDim2.new(0.34, 0, 0.8, 0)
+AnimBlockerToggleButton.Position = UDim2.new(0.64, 0, 0.1, 0)
+AnimBlockerToggleButton.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+AnimBlockerToggleButton.Text = "DESACTIVADO"
+AnimBlockerToggleButton.TextColor3 = Color3.fromRGB(150, 150, 150)
+AnimBlockerToggleButton.Font = Enum.Font.SourceSansBold
+AnimBlockerToggleButton.TextScaled = true
+local AnimBlockerToggleCorner = Instance.new("UICorner", AnimBlockerToggleButton)
+local AnimBlockerToggleStroke = Instance.new("UIStroke", AnimBlockerToggleButton)
+AnimBlockerToggleStroke.Color = Color3.fromRGB(80, 80, 80)
+
+
+local character = player.Character or player.CharacterAdded:Wait()
+local humanoid = character:WaitForChild("Humanoid")
+local conexionAnimacion = nil
+
+local function interceptarAnimaciones(animator)
+	if conexionAnimacion then conexionAnimacion:Disconnect() end
+	conexionAnimacion = animator.AnimationPlayed:Connect(function(animationTrack)
+		local id = animationTrack.Animation.AnimationId
+		if ventajaAutofarmPremium and animacionesBloqueadas[id] then
+			animationTrack:Stop(0)
+		end
+	end)
+end
+
+local function getAnimIDString(animationObject)
+	if not animationObject then return "" end
+	local idStr = tostring(animationObject.AnimationId)
+	return idStr:match("%d+$") or ""
+end
+
+local function monitorTrack(track)
+	local animId = getAnimIDString(track.Animation)
+	
+	if listaAnimacionesBloqueadasSistema[animId] then
+		if ventajaBloqueadorAnimacionesActiva then
+			track:Stop(0)
+		end
+		
+		track:GetPropertyChangedSignal("IsPlaying"):Connect(function()
+			if ventajaBloqueadorAnimacionesActiva and track.IsPlaying and listaAnimacionesBloqueadasSistema[animId] then
+				track:Stop(0)
+			end
+		end)
+	end
+end
+
+local function setupAnimationListener(character)
+	local humanoidObj = character:WaitForChild("Humanoid", 5)
+	if not humanoidObj then return end
+	local animator = humanoidObj:WaitForChild("Animator", 5)
+	if not animator then return end
+	
+	animator.AnimationPlayed:Connect(monitorTrack)
+	
+	for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
+		monitorTrack(track)
+	end
+end
+
+local function actualizarPersonaje(nuevoCharacter)
+	character = nuevoCharacter
+	humanoid = character:WaitForChild("Humanoid")
+	local animator = humanoid:WaitForChild("Animator")
+	
+	interceptarAnimaciones(animator)
+	setupAnimationListener(nuevoCharacter) 
+end
+
+player.CharacterAdded:Connect(actualizarPersonaje)
+if character then actualizarPersonaje(character) end
+
+
+MenuButton.MouseButton1Click:Connect(function() MainPanel.Visible = not MainPanel.Visible end)
+CloseButton.MouseButton1Click:Connect(function() MainPanel.Visible = false end)
+
+SpeedInput.FocusLost:Connect(function()
+	local num = tonumber(SpeedInput.Text)
+	if num and num > 0 then velocidadConfigurada = num else SpeedInput.Text = tostring(velocidadConfigurada) end
+end)
+
+RebirthLimitInput.FocusLost:Connect(function()
+	local num = tonumber(RebirthLimitInput.Text)
+	if num and num >= 0 then 
+		limiteRebirthsConfigurado = num 
+	else 
+		RebirthLimitInput.Text = tostring(limiteRebirthsConfigurado) 
+	end
+end)
+
+TamanoInput.FocusLost:Connect(function()
+	local tTexto = string.lower(TamanoInput.Text)
+	if tTexto == "inf" or tTexto == "infinito" then
+		tamanoConfigurado = "inf"
+	else
+		local num = tonumber(TamanoInput.Text)
+		if num and num > 0 then
+			tamanoConfigurado = num
+		else
+			TamanoInput.Text = tostring(tamanoConfigurado)
+		end
+	end
+end)
+
+ToggleButton.MouseButton1Click:Connect(function()
+	ventajaMovilidadActiva = not ventajaMovilidadActiva
+	if ventajaMovilidadActiva then
+		ToggleButton.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+		ToggleButton.TextColor3 = Color3.fromRGB(0, 0, 0)
+		ToggleButton.Text = "ACTIVADO"
+		ToggleStroke.Color = Color3.fromRGB(255, 255, 255)
+	else
+		ToggleButton.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+		ToggleButton.TextColor3 = Color3.fromRGB(150, 150, 150)
+		ToggleButton.Text = "DESACTIVADO"
+		ToggleStroke.Color = Color3.fromRGB(80, 80, 80)
+		Controls:Enable(true)
+		if player.Character and player.Character:FindFirstChildOfClass("Humanoid") then
+			player.Character.Humanoid.WalkSpeed = 16
+		end
+	end
+end)
+
+AutoToggleButton.MouseButton1Click:Connect(function()
+	ventajaAutoEjercicioActiva = not ventajaAutoEjercicioActiva
+	if ventajaAutoEjercicioActiva then
+		AutoToggleButton.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+		AutoToggleButton.TextColor3 = Color3.fromRGB(0, 0, 0)
+		AutoToggleButton.Text = "ACTIVADO"
+		AutoToggleStroke.Color = Color3.fromRGB(255, 255, 255)
+	else
+		AutoToggleButton.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+		AutoToggleButton.TextColor3 = Color3.fromRGB(150, 150, 150)
+		AutoToggleButton.Text = "DESACTIVADO"
+		AutoToggleStroke.Color = Color3.fromRGB(80, 80, 80)
+	end
+end)
+
+RocaSelectorButton.MouseButton1Click:Connect(function()
+	if ventajaRocaActiva then return end
+	indiceRoca = indiceRoca + 1
+	if indiceRoca > #listaRocas then indiceRoca = 1 end
+	
+	local nombre = listaRocas[indiceRoca]
+	if nombre == "Rock Of Legends" then
+		RocaSelectorButton.Text = "Roca: Legends"
+	elseif nombre == "Muscle King Mountain" then
+		RocaSelectorButton.Text = "Roca: Muscle Mt."
+	elseif nombre == "Ancient Jungle Rock" then
+		RocaSelectorButton.Text = "Roca: Jungle"
+	end
+end)
+
+local listaEjercicios = {"Weight", "Handstands", "Pushups", "Situps"}
+local idxEj = 0
+
+EquipBtn.MouseButton1Click:Connect(function()
+	idxEj = (idxEj + 1) % (#listaEjercicios + 1)
+	
+	if idxEj == 0 then
+		ejercicioSeleccionado = nil
+		EquipBtn.Text = "Ninguno"
+		EquipBtn.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+		EquipBtn.TextColor3 = Color3.fromRGB(200, 200, 200)
+		EquipStroke.Color = Color3.fromRGB(80, 80, 80)
+		if player.Character and player.Character:FindFirstChildOfClass("Humanoid") then
+			player.Character.Humanoid:UnequipTools()
+		end
+	else
+		ejercicioSeleccionado = listaEjercicios[idxEj]
+		EquipBtn.Text = ejercicioSeleccionado
+		EquipBtn.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+		EquipBtn.TextColor3 = Color3.fromRGB(0, 0, 0)
+		EquipStroke.Color = Color3.fromRGB(255, 255, 255)
+	end
+end)
+
+RunService.Heartbeat:Connect(function()
+	if ejercicioSeleccionado then
+		local char = player.Character
+		if char then
+			local hum = char:FindFirstChildOfClass("Humanoid")
+			if hum and hum.Health > 0 then
+				if not char:FindFirstChild(ejercicioSeleccionado) then
+					local tool = player.Backpack:FindFirstChild(ejercicioSeleccionado)
+					if tool then
+						char.Humanoid:EquipTool(tool)
+					end
+				end
+			end
+		end
+	end
+end)
+
+RocaToggleButton.MouseButton1Click:Connect(function()
+	ventajaRocaActiva = not ventajaRocaActiva
+	
+	if ventajaRocaActiva then
+		local nombreRoca = listaRocas[indiceRoca]
+		local WorkspaceRef = game:GetService("Workspace")
+		local folder = WorkspaceRef:FindFirstChild("machinesFolder")
+		
+		if folder then
+			local modeloRoca = folder:FindFirstChild(nombreRoca)
+			if modeloRoca then
+				rocaObjetoActual = modeloRoca:FindFirstChild("Rock")
+			end
+		end
+		
+		if not rocaObjetoActual then
+			warn("ARIDER: No se encontró la roca física en el mapa.")
+			ventajaRocaActiva = false
+			return
+		end
+		
+		posicionOriginal = rocaObjetoActual.CFrame
+		tamanoOriginal = rocaObjetoActual.Size
+		colisionOriginal = rocaObjetoActual.CanCollide
+		transparenciaOriginal = rocaObjetoActual.Transparency
+		
+		rocaObjetoActual.Transparency = 1
+		
+		RocaToggleButton.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+		RocaToggleButton.TextColor3 = Color3.fromRGB(0, 0, 0)
+		RocaToggleButton.Text = "ACTIVADO"
+		RocaToggleStroke.Color = Color3.fromRGB(255, 255, 255)
+		
+		bucleRoca = RunService.RenderStepped:Connect(function()
+			local char = player.Character
+			if char and rocaObjetoActual then
+				local mIzquierda = char:FindFirstChild("LeftHand") or char:FindFirstChild("Left Arm")
+				local mDerecha = char:FindFirstChild("RightHand") or char:FindFirstChild("Right Arm")
+				
+				if mIzquierda and mDerecha then
+					local centro = (mIzquierda.Position + mDerecha.Position) / 2
+					local distancia = (mIzquierda.Position - mDerecha.Position).Magnitude
+					
+					rocaObjetoActual.CanCollide = false
+					rocaObjetoActual.Anchored = true
+					rocaObjetoActual.CFrame = CFrame.new(centro)
+					
+					local escala = distancia * 0.8
+					rocaObjetoActual.Size = Vector3.new(escala, escala, escala)
+				end
+			end
+		end)
+	else
+		RocaToggleButton.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+		RocaToggleButton.TextColor3 = Color3.fromRGB(150, 150, 150)
+		RocaToggleButton.Text = "DESACTIVADO"
+		RocaToggleStroke.Color = Color3.fromRGB(80, 80, 80)
+		
+		if bucleRoca then
+			bucleRoca:Disconnect()
+			bucleRoca = nil
+		end
+		
+		local rocaPorRestaurar = rocaObjetoActual
+		local posOriginal = posicionOriginal
+		local tamOriginal = tamanoOriginal
+		local colOriginal = colisionOriginal
+		local transOriginal = transparenciaOriginal
+		
+		rocaObjetoActual = nil
+		
+		task.spawn(function()
+			if rocaPorRestaurar and posOriginal then
+				local tiempoInicio = tick()
+				local conexionSeguridad
+				conexionSeguridad = RunService.RenderStepped:Connect(function()
+					if tick() - tiempoInicio < 3 then
+						rocaPorRestaurar.CFrame = posOriginal
+						rocaPorRestaurar.Size = tamOriginal
+						rocaPorRestaurar.CanCollide = colOriginal
+						rocaPorRestaurar.Transparency = transOriginal
+					else
+						conexionSeguridad:Disconnect()
+					end
+				end)
+			end
+		end)
+	end
+end)
+
+PunosToggleButton.MouseButton1Click:Connect(function()
+	ventajaPunosActiva = not ventajaPunosActiva
+	if ventajaPunosActiva then
+		PunosToggleButton.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+		PunosToggleButton.TextColor3 = Color3.fromRGB(0, 0, 0)
+		PunosToggleButton.Text = "ACTIVADO"
+		PunosToggleStroke.Color = Color3.fromRGB(255, 255, 255)
+	else
+		PunosToggleButton.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+		PunosToggleButton.TextColor3 = Color3.fromRGB(150, 150, 150)
+		PunosToggleButton.Text = "DESACTIVADO"
+		PunosToggleStroke.Color = Color3.fromRGB(80, 80, 80)
+	end
+end)
+
+RebirthToggleButton.MouseButton1Click:Connect(function()
+	estadoAutoRebirth = not estadoAutoRebirth
+	if estadoAutoRebirth then
+		RebirthToggleButton.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+		RebirthToggleButton.TextColor3 = Color3.fromRGB(0, 0, 0)
+		RebirthToggleButton.Text = "ACTIVADO"
+		RebirthToggleStroke.Color = Color3.fromRGB(255, 255, 255)
+	else
+		RebirthToggleButton.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+		RebirthToggleButton.TextColor3 = Color3.fromRGB(150, 150, 150)
+		RebirthToggleButton.Text = "DESACTIVADO"
+		RebirthToggleStroke.Color = Color3.fromRGB(80, 80, 80)
+	end
+end)
+
+TamanoToggleButton.MouseButton1Click:Connect(function()
+	ventajaTamanoActiva = not ventajaTamanoActiva
+	if ventajaTamanoActiva then
+		TamanoToggleButton.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+		TamanoToggleButton.TextColor3 = Color3.fromRGB(0, 0, 0)
+		TamanoToggleButton.Text = "ACTIVADO"
+		TamanoToggleStroke.Color = Color3.fromRGB(255, 255, 255)
+		
+		bucleTamano = RunService.Heartbeat:Connect(function()
+			if changeSpeedSizeRemote then
+				local valorEnvio = tamanoConfigurado
+				if valorEnvio == "inf" then
+					valorEnvio = math.huge
+				end
+				pcall(function()
+					changeSpeedSizeRemote:InvokeServer("changeSize", valorEnvio)
+				end)
+			end
+		end)
+	else
+		TamanoToggleButton.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+		TamanoToggleButton.TextColor3 = Color3.fromRGB(150, 150, 150)
+		TamanoToggleButton.Text = "DESACTIVADO"
+		TamanoToggleStroke.Color = Color3.fromRGB(80, 80, 80)
+		if bucleTamano then
+			bucleTamano:Disconnect()
+			bucleTamano = nil
+		end
+	end
+end)
+
+AnclajeToggleButton.MouseButton1Click:Connect(function()
+	ventajaAnclajeActiva = not ventajaAnclajeActiva
+	if ventajaAnclajeActiva then
+		local char = player.Character
+		local rootPart = char and char:FindFirstChild("HumanoidRootPart")
+		if rootPart then
+			posicionAnclada = rootPart.Position
+			AnclajeToggleButton.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+			AnclajeToggleButton.TextColor3 = Color3.fromRGB(0, 0, 0)
+			AnclajeToggleButton.Text = "ACTIVADO"
+			AnclajeToggleStroke.Color = Color3.fromRGB(255, 255, 255)
+		else
+			ventajaAnclajeActiva = false
+			warn("ARIDER: No se pudo anclar, falta HumanoidRootPart.")
+		end
+	else
+		posicionAnclada = nil
+		AnclajeToggleButton.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+		AnclajeToggleButton.TextColor3 = Color3.fromRGB(150, 150, 150)
+		AnclajeToggleButton.Text = "DESACTIVADO"
+		AnclajeToggleStroke.Color = Color3.fromRGB(80, 80, 80)
+	end
+end)
+
+PremiumToggleButton.MouseButton1Click:Connect(function()
+	ventajaAutofarmPremium = not ventajaAutofarmPremium
+	if ventajaAutofarmPremium then
+		PremiumToggleButton.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+		PremiumToggleButton.TextColor3 = Color3.fromRGB(0, 0, 0)
+		PremiumToggleButton.Text = "ACTIVADO"
+		PremiumToggleStroke.Color = Color3.fromRGB(255, 255, 255)
+	else
+		PremiumToggleButton.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+		PremiumToggleButton.TextColor3 = Color3.fromRGB(150, 150, 150)
+		PremiumToggleButton.Text = "DESACTIVADO"
+		PremiumToggleStroke.Color = Color3.fromRGB(80, 80, 80)
+		
+		if humanoid then
+			local animator = humanoid:FindFirstChildOfClass("Animator")
+			if animator then
+				for _, track in pairs(animator:GetPlayingAnimationTracks()) do
+					if animacionesBloqueadas[track.Animation.AnimationId] then
+						track:Stop()
+					end
+				end
+			end
+		end
+	end
+end)
+
+AnimBlockerToggleButton.MouseButton1Click:Connect(function()
+	ventajaBloqueadorAnimacionesActiva = not ventajaBloqueadorAnimacionesActiva
+	if ventajaBloqueadorAnimacionesActiva then
+		AnimBlockerToggleButton.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+		AnimBlockerToggleButton.TextColor3 = Color3.fromRGB(0, 0, 0)
+		AnimBlockerToggleButton.Text = "ACTIVADO"
+		AnimBlockerToggleStroke.Color = Color3.fromRGB(255, 255, 255)
+		
+		local char = player.Character
+		if char then
+			local humanoidObj = char:FindFirstChildOfClass("Humanoid")
+			if humanoidObj then
+				local animator = humanoidObj:FindFirstChildOfClass("Animator")
+				if animator then
+					for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
+						local animId = getAnimIDString(track.Animation)
+						if listaAnimacionesBloqueadasSistema[animId] then
+							track:Stop(0)
+						end
+					end
+				end
+			end
+		end
+	else
+		AnimBlockerToggleButton.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+		AnimBlockerToggleButton.TextColor3 = Color3.fromRGB(150, 150, 150)
+		AnimBlockerToggleButton.Text = "DESACTIVADO"
+		AnimBlockerToggleStroke.Color = Color3.fromRGB(80, 80, 80)
+	end
+end)
+
+
+RunService.Heartbeat:Connect(function()
+	if ventajaAnclajeActiva and posicionAnclada then
+		local char = player.Character
+		if char then
+			local rootPart = char:FindFirstChild("HumanoidRootPart")
+			local hum = char:FindFirstChildOfClass("Humanoid")
+			if rootPart and hum then
+				if (rootPart.Position - posicionAnclada).Magnitude > 0.1 then
+					rootPart.CFrame = CFrame.new(posicionAnclada) * CFrame.Angles(rootPart.CFrame:ToEulerAnglesXYZ())
+					rootPart.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+					rootPart.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+				end
+			end
+		end
+	end
+end)
+
+RunService.Heartbeat:Connect(function()
+	if estadoAutoRebirth then
+		local stats = player:FindFirstChild("leaderstats")
+		if stats then
+			local rebVal = stats:FindFirstChild("Rebirths")
+			if rebVal and rebVal.Value >= limiteRebirthsConfigurado then
+				estadoAutoRebirth = false
+				RebirthToggleButton.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+				RebirthToggleButton.TextColor3 = Color3.fromRGB(150, 150, 150)
+				RebirthToggleButton.Text = "DESACTIVADO"
+				RebirthToggleStroke.Color = Color3.fromRGB(80, 80, 80)
+				return
+			end
+		end
+
+		if not ejecutandoLlamada and rebirthRemote then
+			local char = player.Character
+			if char and char:FindFirstChildOfClass("Humanoid") and char.Humanoid.Health > 0 then
+				ejecutandoLlamada = true
+				task.spawn(function()
+					pcall(function()
+						rebirthRemote:InvokeServer("rebirthRequest")
+					end)
+					task.wait(0.05) 
+					ejecutandoLlamada = false
+				end)
+			end
+		end
+	end
+end)
+
+task.spawn(function()
+	while true do
+		if ventajaMovilidadActiva then
+			local char = player.Character
+			if char then
+				local humanoidObj = char:FindFirstChildOfClass("Humanoid")
+				local rootPart = char:FindFirstChild("HumanoidRootPart")
+				
+				if humanoidObj and humanoidObj.Health > 0 then
+					if humanoidObj.WalkSpeed <= 0 or humanoidObj.WalkSpeed ~= velocidadConfigurada then
+						humanoidObj.WalkSpeed = velocidadConfigurada
+					end
+					if humanoidObj.JumpPower <= 0 then
+						humanoidObj.JumpPower = saltoMaximoDetectado
+					end
+					if rootPart and rootPart.Anchored then
+						rootPart.Anchored = false
+					end
+				end
+			end
+			
+			Controls:Enable(true)
+			
+			local touchGui = playerGui:FindFirstChild("TouchGui")
+			if touchGui then
+				local frame = touchGui:FindFirstChild("TouchControlFrame")
+				if frame then
+					local jump = frame:FindFirstChild("JumpButton")
+					if jump then jump.Visible = true end
+					
+					local dynamicThumb = frame:FindFirstChild("DynamicThumbstickFrame")
+					if dynamicThumb then dynamicThumb.Visible = true end
+				end
+			end
+		end
+		task.wait(0.1)
+	end
+end)
+
+task.spawn(function()
+	while true do
+		if ventajaAutoEjercicioActiva then
+			local char = player.Character
+			if char then
+				local hum = char:FindFirstChildOfClass("Humanoid")
+				if hum and hum.Health > 0 then
+					for nombreHerramienta, datos in pairs(herramientasConfig) do
+						local herramientaEquipada = char:FindFirstChild(nombreHerramienta)
+						if herramientaEquipada and herramientaEquipada:IsA("Tool") then
+							herramientaEquipada:Activate()
+							task.wait(datos.cooldown)
+							break
+						end
+					end
+				end
+			end
+		end
+		task.wait(0.01)
+	end
+end)
+
+RunService.Heartbeat:Connect(function()
+	if ventajaPunosActiva then
+		local char = player.Character
+		if char then
+			local humanoidObj = char:FindFirstChildOfClass("Humanoid")
+			if humanoidObj and not char:FindFirstChild("Punch") then
+				local punchTool = player.Backpack:FindFirstChild("Punch")
+				if punchTool then
+					humanoidObj:EquipTool(punchTool)
+				end
+			end
+		end
+	end
+end)
+
+task.spawn(function()
+	local mano = "leftHand"
+	while true do
+		task.wait()
+		
+		if ventajaAutofarmPremium and character and humanoid and humanoid.Health > 0 then
+			local mochila = player:FindFirstChild("Backpack")
+			if mochila then
+				local punch = mochila:FindFirstChild("Punch")
+				if punch then
+					humanoid:EquipTool(punch)
+				end
+			end
+
+			local punchEquipado = character:FindFirstChild("Punch")
+			if punchEquipado then
+				punchEquipado:Activate()
+			end
+
+			if eventoGolpe then
+				mano = (mano == "leftHand") and "rightHand" or "leftHand"
+				pcall(function()
+					eventoGolpe:FireServer("punchTrails", "handTrail", "handTrail", mano)
+				end)
+			end
+			
+			task.wait(attackTimePremium)
+		end
+	end
+end)
+
+local VirtualUser = game:GetService("VirtualUser")
+local GuiService = game:GetService("GuiService")
+local Camera = workspace.CurrentCamera
+
+player.Idled:Connect(function(timeIdled)
+	VirtualUser:Button2Down(Vector2.new(0, 0), Camera.CFrame)
+	task.wait(0.2)
+	VirtualUser:Button2Up(Vector2.new(0, 0), Camera.CFrame)
+end)
+
+task.spawn(function()
+	while true do
+		task.wait(10)
+		VirtualUser:CaptureController()
+		VirtualUser:ClickButton2(Vector2.new(100, 100), Camera.CFrame)
+	end
+end)
+
+task.spawn(function()
+	while true do
+		task.wait(15)
+		VirtualUser:TypeKey(0x00)
+	end
+end)
+
+task.spawn(function()
+	while true do
+		task.wait(5)
+		if Camera then
+			Camera.CFrame = Camera.CFrame * CFrame.Angles(0, math.rad(0.001), 0)
+			task.wait(0.1)
+			Camera.CFrame = Camera.CFrame * CFrame.Angles(0, math.rad(-0.001), 0)
+		end
+	end
+end)
+
+task.spawn(function()
+	while true do
+		task.wait(25)
+		GuiService.SelectedObject = MenuButton
+		task.wait(0.1)
+		GuiService.SelectedObject = nil
+	end
+end)
