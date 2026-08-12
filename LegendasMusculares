@@ -80,7 +80,7 @@ local function ruletaAutomatica()
 		while tick() - tiempoInicio < 18 do
 			local args = {
 				"openFortuneWheel",
-				game:GetService("ReplicatedStorage"):WaitForChild("fortuneWheelChances"):WaitForChild("Fortune Wheel")
+				game:GetService("ReplicatedStorage"):WaitForChild("shared"):WaitForChild("catalogs"):WaitForChild("fortuneWheelChances"):WaitForChild("Fortune Wheel")
 			}
 			pcall(function()
 				game:GetService("ReplicatedStorage"):WaitForChild("rEvents"):WaitForChild("openFortuneWheelRemote"):InvokeServer(unpack(args))
